@@ -246,9 +246,20 @@ def finalize_update() -> None:
   # (background staging, device still drivable on the old BASEDIR) rather than at
   # boot time, where a missing network would leave the car unable to start. It never
   # fails the update: on any problem it removes .venv so the AGNOS venv is used.
-  # (The fork's static model .pkl self-heal was dropped: sunnypilot removed model
-  # chunking in #38941 and rebuilds the default model files at build time.)
   sync_venv(FINALIZED)
+
+  # Static model self-heal (kept from the HW1 fork, see sunnypilot/models/static_provisioning.py):
+  # a model file left as a Git LFS pointer is re-pulled, and if it stays broken the update is
+  # not marked ready (it would crash modeld). Test-loads only while the car is off. Any other
+  # error in the check itself is logged and never blocks the update.
+  from openpilot.sunnypilot.models.static_provisioning import ModelProvisioningError, verify_and_refresh_static_models
+  try:
+    from openpilot.selfdrive.modeld.helpers import chestnut_present
+    verify_and_refresh_static_models(FINALIZED, chestnut=chestnut_present(), load_check=Params().get_bool("IsOffroad"))
+  except ModelProvisioningError:
+    raise
+  except Exception:
+    cloudlog.exception("static model check failed, continuing with the update")
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")

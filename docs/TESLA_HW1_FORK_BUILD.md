@@ -110,8 +110,10 @@ Nothing on community.sunnypilot.ai covers HW1/AP1 S/X; these are the general les
 - Legacy Model S/X (HW1-3) report **no blind-spot sensors** (`has_bsm` in opendbc's `sunnypilot/car/interfaces.py`): `update_legacy` never fills blind-spot data, so BSM-gated lane-change features stay off.
 - To confirm on the car: `safety/ignition.h` treats any `0x201` frame on bus 0/2 as ignition on (from the original fork). If HW1 sends 0x201 while parked, the comma would never go offroad (no updates, 12 V drain).
 - PitStop only sends CAN messages while the car is off (`selfdrive/controls/lib/can_api/handler.py`), so it can never compete with `card` for `sendcan` while driving.
-- The fork's static model `.pkl` self-heal and `chestnut_link.py` were removed in Nov 2026: sunnypilot removed model chunking (#38941), and they would have made every update fail.
-- PitStop's Chestnut flash/overheat and model-provisioning cards show empty, because nothing writes those params any more.
+- **Chestnut add-ons from the original fork are kept** (Boki, Nov 25 2026: never remove them), ported to sunnypilot's Nov 2026 code:
+  - `selfdrive/modeld/chestnut_link.py`: before the big model loads (both `selfdrive/modeld` and `sunnypilot/modeld_v2`), checks over USB that the chestnut is powered and its PCIe link is up (sends PCIe power-on once if the link is down). If not, the load fails fast into sunnypilot's own fallback (small model, one onroad-cycle retry). Does nothing without a chestnut.
+  - `sunnypilot/models/static_provisioning.py`, run by `updated.py` while finalizing an update: every tracked model `.pkl` must be real weights, not a Git LFS pointer; broken ones get one `git lfs pull`, and if they stay broken the update is not marked ready. While the car is off it also test-loads the tracked driving `.pkl` files (the big one only with a chestnut); load failures are recorded, not fatal. Result in `ModelStaticProvisioningStatus` (PitStop shows it). The fork's old Hugging Face chunk download is gone because sunnypilot removed chunking (#38941).
+- PitStop's Chestnut flash/overheat cards show empty, because nothing writes those params any more.
 
 ## Check on the first HW1 drive (from the Nov 25 2026 car-code review)
 

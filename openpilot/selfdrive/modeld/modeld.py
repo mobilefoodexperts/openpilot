@@ -40,6 +40,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, 
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_driving_model_data, fill_pose_msg, PublishState
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
+from openpilot.selfdrive.modeld.chestnut_link import wait_for_stable_chestnut
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, chestnut_compiled, modeld_pkl_path, load_oob, wait_for_chestnut
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
@@ -278,6 +279,9 @@ def main(demo=False):
       nonlocal big_model
       try:
         wait_for_chestnut()
+        # chestnut_link (kept from the HW1 fork): GPU powered and PCIe link up before tinygrad opens it
+        if not wait_for_stable_chestnut():
+          raise RuntimeError("chestnut not powered or PCIe link not up")
         m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
         m.warmup()
         big_model = m
