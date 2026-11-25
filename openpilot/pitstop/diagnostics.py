@@ -6,7 +6,6 @@ import time
 from aiohttp import web
 
 from openpilot.common.basedir import BASEDIR
-from openpilot.common.hardware.hw import Paths
 from openpilot.cereal import messaging, log
 
 logger = logging.getLogger("pitstop")
@@ -93,7 +92,7 @@ class DiagnosticMixin:
     try:
       body = await request.json()
     except Exception:
-      raise web.HTTPBadRequest(text="Invalid JSON")
+      raise web.HTTPBadRequest(text="Invalid JSON") from None
     platform_name = body.get("platform")
     if not platform_name:
       raise web.HTTPBadRequest(text="Missing 'platform'")
@@ -205,13 +204,13 @@ class DiagnosticMixin:
         {"pandas_connected": pandas_connected, "panda_timeout": False}, winner=False))
       if ignition_line:
         branches.append(make_branch(2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
-          f"IGNITION_ON via hardware (ignitionLine=TRUE)", "winner",
+          "IGNITION_ON via hardware (ignitionLine=TRUE)", "winner",
           {"ignitionLine": True, "ignitionCan": ignition_can, "Combined": True}, winner=True))
         branches.append(make_branch(3, "if CAN message received within 2s → IGNITION_CAN else RESET",
           "OVERRIDDEN (ignitionLine already true)", "overridden", {"ignitionCan": ignition_can}))
       elif ignition_can:
         branches.append(make_branch(2, "if ignitionLine OR ignitionCan → IGNITION_ON else IGNITION_OFF",
-          f"IGNITION_ON via CAN (ignitionCan=TRUE)", "winner",
+          "IGNITION_ON via CAN (ignitionCan=TRUE)", "winner",
           {"ignitionLine": False, "ignitionCan": True, "Combined": True}, winner=True))
         branches.append(make_branch(3, "if CAN message received within 2s → IGNITION_CAN else RESET",
           "USE_CAN: ignition via CAN message", "completed", {"ignitionCan": True, "ResetTimer": "not_expired"}))
@@ -223,7 +222,7 @@ class DiagnosticMixin:
           "NOT_EXECUTED (no ignition from hardware)", "skipped", {"ignitionCan": ignition_can}))
       if is_started:
         branches.append(make_branch(4, "if all startup_conditions AND ignition → START else BLOCK",
-          f"START: deviceState.started=TRUE (all conditions met)", "winner",
+          "START: deviceState.started=TRUE (all conditions met)", "winner",
           {"ignition_on": ignition_on, "thermal_status": thermal_status, "thermal_blocking": thermal_blocking,
            "free_space_pct": free_space_pct, "space_blocking": space_blocking, "terms_accepted": terms_accepted,
            "terms_blocking": terms_blocking, "offroad_mode": offroad_mode, "offroad_blocking": offroad_blocking,
@@ -231,7 +230,7 @@ class DiagnosticMixin:
            "startup_blocking": startup_blocking}, winner=True))
       elif startup_blocking:
         branches.append(make_branch(4, "if all startup_conditions AND ignition → START else BLOCK",
-          f"BLOCKED: startup conditions not met", "failed",
+          "BLOCKED: startup conditions not met", "failed",
           {"ignition_on": ignition_on, "thermal_status": thermal_status, "thermal_blocking": thermal_blocking,
            "free_space_pct": free_space_pct, "space_blocking": space_blocking, "terms_accepted": terms_accepted,
            "terms_blocking": terms_blocking, "offroad_mode": offroad_mode, "offroad_blocking": offroad_blocking,

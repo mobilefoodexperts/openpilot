@@ -9,9 +9,8 @@ from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.helpers import get_active_bundle, verify_file, ACTIVE_BUNDLE_KEYS
 from openpilot.sunnypilot.models.helpers import _bundle_artifacts as bundle_artifacts
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL
-from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
-from openpilot.common.hardware.usb import CHESTNUT_USABLE_STATES, ChestnutState, CHESTNUT_STATE_LABELS, get_chestnut_hardware_state, get_usb_state
+from openpilot.common.hardware.usb import CHESTNUT_USABLE_STATES, CHESTNUT_STATE_LABELS, get_chestnut_hardware_state, get_usb_state
 from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 
 logger = logging.getLogger("pitstop")
@@ -151,7 +150,7 @@ class ModelMixin:
     bundles, _ = await self._active_source_bundles_async()
     bundle = next((b for b in bundles if b.index == index), None)
     if bundle is None:
-      raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog "
+      raise web.HTTPBadRequest(text=f"index {index} not in the current model catalog " +
                                      f"(chestnut_present={self._chestnut_present()}); refresh the list and retry")
     if not bundle.ref:
       raise web.HTTPInternalServerError(text=f"Bundle '{bundle.internalName}' has no ref; cannot select")

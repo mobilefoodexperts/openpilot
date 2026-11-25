@@ -6,7 +6,6 @@ import time
 from aiohttp import web
 
 from openpilot.common.hardware.hw import Paths
-from openpilot.common.params import Params
 
 from .constants import PITSTOP_DATA_DIR
 
@@ -42,7 +41,7 @@ class OsmMixin:
       return True
     try:
       mtime = os.path.getmtime(cache_path)
-      return (time.time() - mtime) > max_age_seconds
+      return (time.time() - mtime) > max_age_seconds  # noqa: TID251 compared with file mtime
     except Exception:
       return True
 
@@ -144,7 +143,7 @@ class OsmMixin:
     try:
       body = await request.json()
     except Exception:
-      raise web.HTTPBadRequest(text="Invalid JSON")
+      raise web.HTTPBadRequest(text="Invalid JSON") from None
     country = body.get("country")
     state = body.get("state")
     if state:

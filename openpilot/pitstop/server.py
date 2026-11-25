@@ -25,10 +25,10 @@ logger = logging.getLogger("pitstop")
 async def access_log_middleware(request, handler):
   if request.path == "/api/logs":
     return await handler(request)
-  t0 = time.time()
+  t0 = time.monotonic()
   try:
     response = await handler(request)
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       status = response.status
       msg = f"[{status}] {request.method} {request.path} ({elapsed:.0f}ms)"
@@ -40,12 +40,12 @@ async def access_log_middleware(request, handler):
         logger.info(msg)
     return response
   except web.HTTPException as ex:
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       logger.warning(f"[{ex.status}] {request.method} {request.path} ({elapsed:.0f}ms)")
     raise
   except Exception:
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       logger.exception(f"[500] {request.method} {request.path} ({elapsed:.0f}ms)")
     raise
@@ -75,7 +75,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
         f.write("test")
       os.remove(test_file)
     except Exception as e:
-      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} is not writable: {e}")
+      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} is not writable: {e}") from e
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
@@ -223,7 +223,7 @@ def main():
 
 if __name__ == "__main__":
   raise SystemExit(
-    "ERROR: pitstop.server must not be started directly.\n"
-    "It is managed by the system manager (manager.py).\n"
-    "For manual testing use: /usr/local/venv/bin/python3 -m pitstop.server"
+    "ERROR: pitstop.server must not be started directly.\n" +
+    "It is managed by the system manager (manager.py).\n" +
+    "For manual testing use: python3 -m openpilot.pitstop.launcher"
   )

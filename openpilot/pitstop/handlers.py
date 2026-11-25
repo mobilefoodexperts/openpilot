@@ -350,7 +350,7 @@ class HandlerMixin:
         freqs = [int(x) for x in avail_freqs.split()]
         times = [int(x) for x in clock_stats.split()]
         total_ns = sum(times)
-        for hz, ns in zip(freqs, times):
+        for hz, ns in zip(freqs, times, strict=False):
           clocks.append({
             "mhz": hz // 1000000,
             "time_ns": ns,
@@ -620,7 +620,7 @@ class HandlerMixin:
     fname = f"backup-{timestamp}.json"
     fpath = os.path.join(backup_dir, fname)
     with open(fpath, "w") as f:
-      json.dump({"created": time.time(), "params": config}, f)
+      json.dump({"created": time.time(), "params": config}, f)  # noqa: TID251 wall-clock timestamp
     logger.info(f"[BACKUP] created {fname} ({len(config)} params)")
     return web.json_response({"name": fname, "status": "created"})
 
@@ -644,14 +644,14 @@ class HandlerMixin:
     field = await reader.next()
     if field is None or field.name != "file":
       raise web.HTTPBadRequest(text="Missing file field")
-    filename = field.filename or f"backup-upload-{int(time.time())}.json"
+    filename = field.filename or f"backup-upload-{int(time.time())}.json"  # noqa: TID251 wall-clock name
     if not filename.endswith(".json"):
       filename += ".json"
     data = await field.read()
     try:
       parsed = json.loads(data)
     except json.JSONDecodeError:
-      raise web.HTTPBadRequest(text="Invalid JSON file")
+      raise web.HTTPBadRequest(text="Invalid JSON file") from None
     if not isinstance(parsed, dict) or "params" not in parsed:
       raise web.HTTPBadRequest(text="Not a valid backup file (missing 'params')")
     fpath = os.path.normpath(os.path.join(backup_dir, filename))

@@ -20,7 +20,7 @@ class LogMixin:
     proc_lc = proc.lower() if proc else None
     for fpath in files[:15]:
       try:
-        with open(fpath, 'r', errors='replace') as f:
+        with open(fpath, errors='replace') as f:
           for line in f:
             line = line.strip()
             if not line:
@@ -37,11 +37,16 @@ class LogMixin:
                 continue
               if search_lc and search_lc not in msg.lower() and search_lc not in name.lower():
                 continue
-              if levelnum >= 50: lvlname = 'CRITICAL'
-              elif levelnum >= 40: lvlname = 'ERROR'
-              elif levelnum >= 30: lvlname = 'WARNING'
-              elif levelnum >= 10: lvlname = 'DEBUG' if levelnum < 20 else 'INFO'
-              else: lvlname = 'DEBUG'
+              if levelnum >= 50:
+                lvlname = 'CRITICAL'
+              elif levelnum >= 40:
+                lvlname = 'ERROR'
+              elif levelnum >= 30:
+                lvlname = 'WARNING'
+              elif levelnum >= 10:
+                lvlname = 'DEBUG' if levelnum < 20 else 'INFO'
+              else:
+                lvlname = 'DEBUG'
               entries.append({
                 'ts': d.get('created', 0), 'level': (d.get('levelname') or lvlname).upper(),
                 'levelnum': levelnum, 'source': 'swaglog', 'process': name,
@@ -112,7 +117,7 @@ class LogMixin:
         fpath = os.path.join(crash_dir, fname)
         try:
           stat = os.stat(fpath)
-          with open(fpath, 'r', errors='replace') as f:
+          with open(fpath, errors='replace') as f:
             content = f.read(32768)
           if search_lc and search_lc not in content.lower():
             continue
@@ -133,7 +138,7 @@ class LogMixin:
     search_lc = search.lower() if search else None
     LVL_MAP = {'CRITICAL': 50, 'ERROR': 40, 'WARNING': 30, 'INFO': 20, 'DEBUG': 10}
     try:
-      with open(fpath, 'r', errors='replace') as f:
+      with open(fpath, errors='replace') as f:
         for line in f:
           line = line.strip()
           if not line:
