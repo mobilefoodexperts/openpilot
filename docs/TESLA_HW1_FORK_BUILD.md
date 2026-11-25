@@ -112,3 +112,12 @@ Nothing on community.sunnypilot.ai covers HW1/AP1 S/X; these are the general les
 - PitStop only sends CAN messages while the car is off (`selfdrive/controls/lib/can_api/handler.py`), so it can never compete with `card` for `sendcan` while driving.
 - The fork's static model `.pkl` self-heal and `chestnut_link.py` were removed in Nov 2026: sunnypilot removed model chunking (#38941), and they would have made every update fail.
 - PitStop's Chestnut flash/overheat and model-provisioning cards show empty, because nothing writes those params any more.
+
+## Check on the first HW1 drive (from the Nov 25 2026 car-code review)
+
+- **Cruise set speed:** `carstate.py` reads `DI_digitalSpeed` (bit 48) as the set speed; the DBC note and `todo_HW1.md` #5 say the Unity and xnor layouts disagree on which of bit 32/48 is the set speed. Set cruise to e.g. 60 and check that openpilot's MAX shows 60 (not the current speed). If it follows the speedometer, switch to `DI_cruiseSet`.
+- **Radar:** HW1 is configured with the Bosch radar on bus 1 (`radarUnavailable` is only set for S HW2). If the comma shows a radar error that blocks engaging, the radar bus isn't reaching the panda; then make `radarUnavailable` depend on the radar messages being present.
+- **Brake:** the panda treats `driverBrakeStatus` 0/3 (undefined/SNA) as pressed, openpilot only 2. A "controls mismatch" right after engaging points here.
+- **Ignition / offroad:** see the 0x201 note above (park check).
+- Fixed Nov 25 2026: door-open was never detected (DBC values are lowercase `"open"`).
+- Static analysis: ruff passes; `ty` still reports ~16 type-only errors (PitStop/CAN-API schema dicts and type ripple from the fork's opendbc). Not runtime problems.
