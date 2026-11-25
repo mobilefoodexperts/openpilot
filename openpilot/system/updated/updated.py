@@ -205,17 +205,13 @@ def finalize_update() -> None:
   run(["git", "reset", "--hard"], FINALIZED)
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
 
-  # Self-heal .venv and the static model weights against THIS candidate's own
-  # lockfile/tinygrad pin. Deliberately done here (background staging, device
-  # still drivable on the old BASEDIR) rather than at launch_chffrplus.sh/boot
-  # time, where a missing network would leave the car unable to start. No
-  # try/except: any failure here must propagate so set_consistent_flag(True)
-  # below is never reached - a broken update must never be marked ready to
-  # swap in; fail the update, not the car.
+  # Self-heal .venv against THIS candidate's own lockfile. Deliberately done here
+  # (background staging, device still drivable on the old BASEDIR) rather than at
+  # boot time, where a missing network would leave the car unable to start. No
+  # try/except: a broken update must never be marked ready to swap in.
+  # (The fork's static model .pkl self-heal was dropped: sunnypilot removed model
+  # chunking in #38941 and rebuilds the default model files at build time.)
   sync_venv(FINALIZED)
-  from openpilot.selfdrive.modeld.helpers import chestnut_present
-  from openpilot.sunnypilot.models.static_provisioning import verify_and_refresh_static_models
-  verify_and_refresh_static_models(FINALIZED, chestnut=chestnut_present())
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
@@ -238,6 +234,8 @@ def handle_agnos_update() -> None:
   cloudlog.info(f"Beginning background installation for AGNOS {updated_version}")
 
   manifest_path = os.path.join(OVERLAY_MERGED, "openpilot/system/hardware/comma/agnos.json")
+  if not os.path.isfile(manifest_path):  # releases before the openpilot/ move
+    manifest_path = os.path.join(OVERLAY_MERGED, "system/hardware/tici/agnos.json")
   target_slot_number = get_target_slot_number()
   flash_agnos_update(manifest_path, target_slot_number, cloudlog)
 
@@ -406,13 +404,9 @@ class Updater:
       ["git", "checkout", "--force", "--no-recurse-submodules", "-B", branch, "FETCH_HEAD"],
       ["git", "branch", "--set-upstream-to", f"origin/{branch}"],
       ["git", "reset", "--hard"],
-      # -e excludes: .venv/ (created by uv sync) and the static model .pkl weights
-      # under selfdrive/modeld/models/ are both gitignored, so a plain -xdff would
-      # delete them from this overlay view - and finalize_update() copies THIS view
-      # into the update candidate, so every update would silently wipe them from the
-      # swapped-in checkout. sync_venv()/verify_and_refresh_static_models() below
-      # then true up whatever survives against this candidate's own lockfile/pin.
-      ["git", "clean", "-xdff", "-e", ".venv/", "-e", "openpilot/selfdrive/modeld/models/*.pkl*"],
+      # -e .venv/: the venv (created by uv sync) is gitignored, so a plain -xdff would
+      # wipe it from the update candidate; sync_venv() then trues it up.
+      ["git", "clean", "-xdff", "-e", ".venv/"],
       ["git", "submodule", "sync"],
       ["git", "submodule", "update", "--init", "--recursive"],
       ["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"],

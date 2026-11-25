@@ -1,3 +1,5 @@
+> **This branch (`sunnypilot-nov-2026`):** the Tesla HW1 fork from [P6g9YHK6/SunnyPilot-TeslaHW1](https://github.com/P6g9YHK6/SunnyPilot-TeslaHW1) (`dev`, Oct 16 2026) merged with [sunnypilot](https://github.com/sunnypilot/sunnypilot) `master` as of Nov 25 2026 (release v2026.002.003), so the model selector reads the current `driving_models_v25` / `driving_models_chestnut_v28` lists. The Tesla HW1 car code is in [mobilefoodexperts/opendbc](https://github.com/mobilefoodexperts/opendbc/tree/sunnypilot-nov-2026). Experimental: not yet road-tested.
+
 > **Fork notice:** This repository is a fork of [sunnypilot/sunnypilot](https://github.com/sunnypilot/sunnypilot), which is a fork of [commaai/openpilot](https://github.com/commaai/openpilot). Built for the purpose of adding **Tesla Hardware 1** support to sunnypilot. The HW1/AP1 work is based on [xnor](https://github.com/xnor-tech/openpilot), is the successor of [Tinkla (Unity)](https://github.com/BogGyver/openpilot).
 ## Background
 This project was initially meant to support StarPilot, but due to the time it took to swap between OS even with the new [`op fork`](tools/op.sh) tool, sunnypilot with its recent update [v2026.001.000](https://github.com/sunnypilot/sunnypilot/releases/tag/v2026.001.000) (2026-05-06) adding support for both comma 3X & 4 became an easy target for porting.
@@ -11,7 +13,7 @@ This project was initially meant to support StarPilot, but due to the time it to
 #### comma UI
 When requested for a custom install URL, use:
 ```
-P6g9YHK6/master
+mobilefoodexperts/sunnypilot-nov-2026
 ```
 
 #### SSH
@@ -20,13 +22,13 @@ Generate an SSH key (`ssh-keygen -t ed25519`), add it to GitHub, then on the dev
 SSH into the device (`ssh comma@<device-ip>`) and run:
 ```bash
 cd /data && rm -rf openpilot
-git clone --depth 1 --shallow-submodules --recurse-submodules -b master https://github.com/P6g9YHK6/SunnyPilot-TeslaHW1.git openpilot
+git clone --depth 1 --shallow-submodules --recurse-submodules -b sunnypilot-nov-2026 https://github.com/mobilefoodexperts/SunnyPilot-TeslaHW1.git openpilot
 cd openpilot
 op setup
 op build -j2 2>&1 | tee /data/build.log
 sudo reboot
 ```
-If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/P6g9YHK6_SunnyPilot-TeslaHW1/tools/op.sh fork list`.
+If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/mobilefoodexperts_SunnyPilot-TeslaHW1/tools/op.sh fork list`.
 
 
 ## Upstream Updates
