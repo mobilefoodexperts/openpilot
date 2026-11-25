@@ -16,4 +16,5 @@ openpilot/selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs
 openpilot/common/hardware/comma/updater filter=lfs diff=lfs merge=lfs -text
 
 # fork images: plain git files, never LFS (this fork cannot write to sunnypilot's LFS store)
-docs/assets/tesla-hw1/** -filter -diff -merge text
+docs/assets/tesla-hw1/** -filter -diff -merge -text
+docs/assets/tesla-hw1/*.svg text
