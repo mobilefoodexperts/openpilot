@@ -195,7 +195,7 @@ def sync_venv(target_dir: str) -> None:
 
   # the real interpreter behind whatever venv updated runs in (never another venv's shim)
   base_python = os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable)
-  env = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir,
+  env: dict[str, str] = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir,
          "UV_CACHE_DIR": "/data/uv_cache"}
   env.pop("VIRTUAL_ENV", None)
   try:
