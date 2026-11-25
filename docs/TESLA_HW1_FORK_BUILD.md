@@ -77,6 +77,32 @@ scons -j$(nproc)           # build for PC
 - **Driving simulator** (MetaDrive): `openpilot/tools/sim/README.md`.
 - **Tests:** `pytest openpilot/selfdrive/car/tests/test_car_interfaces.py -k TESLA` and, in `opendbc_repo`, `pytest opendbc/car/tesla/tests`.
 
+## From the sunnypilot community forum (read Nov 25 2026)
+
+Nothing on community.sunnypilot.ai covers HW1/AP1 S/X; these are the general lessons that apply.
+
+**Install / update**
+- Switch branches by **uninstall + reinstall**, not the updater: 2026.003 moved the tree under `openpilot/` and older updaters can get stuck (t/6495, t/3844).
+- If an install stalls (~10%) or says "incompatible": install stock openpilot first, let it boot, uninstall, then install this branch (t/3722, t/6084). If another fork changed AGNOS, reflash at flash.comma.ai first (t/5732, t/5452).
+- `openpilot failed to build ... scons_cache lock`: power dropped mid-build; clear `/data/scons_cache` or factory reset (t/2227).
+- Power the comma from the car or a USB-PD brick during install; a PC USB port isn't enough (t/2099).
+
+**Power / offroad**
+- Set **Max Offroad Time** short (5-30 min; minutes; needs "Show Advanced Controls"). A Tesla owner tripped the Autopilot computer eFuse with a 30 h stay-on (t/2865). It is ignored while the comma sees ignition (`power_monitoring.py`: `should_shutdown &= not ignition`), so check the 0x201 note below on the first park.
+- The comma shuts down below ~11.8 V car battery - an early sign of a weak 12 V battery (t/973).
+- A maintainer-confirmed bug once treated message 0x201 as ignition and kept devices from going offroad (t/4612, fixed upstream). This fork's own `ignition.h` rule treats 0x201 (SDM1 on HW1) as ignition on.
+
+**sunnylink**
+- Never "unpair"/delete the device in sunnylink (irreversible; backups lost) (t/1944, t/5651). Note the sunnylink dongle ID after pairing.
+- Fork-added params show up under "Other" automatically (t/3164). Settings pushed from sunnylink may need an offroad/onroad cycle (t/5400).
+- Models can be switched from sunnylink.ai/dashboard/models or on the device; after updates check the active model didn't revert to the default (t/7525).
+
+**Models (Tesla = angle steering; torque tuning / NNLC don't apply, t/3124)**
+- Baseline: **CD210** (default). Users with angle-steering cars and Teslas report good results with SC Model, Cheddar (with Blendful), RDF (staging/dev only); OP Model 7/8/10v1 and WMIv12 ping-pong on angle cars (t/2305, t/7723, t/6569, t/4317).
+- Change one thing at a time; don't reset calibration between model comparisons (t/4393). Camera offset max ±0.35 m (t/2312).
+
+**Rules for forks** (comma/sunnypilot): never weaken panda/opendbc safety or driver monitoring; keep the opendbc safety test suite passing or risk a fork/device ban (t/381, t/253). `tesla_legacy.h` (from the original fork) currently fails opendbc's MISRA check - style only, but worth fixing.
+
 ## Known limits
 
 - `updated.py` `sync_venv()` builds a **relocatable** `.venv` in the staging dir (a default uv venv hard-codes its path and breaks when the update is moved into place) and never fails an update: if uv is missing or the sync fails it removes `.venv`, and `launch_chffrplus.sh` uses AGNOS's `/usr/local/venv` like upstream. On a fresh install there is no `.venv`, so PitStop (needs `aiohttp`) may not start until the first update.
