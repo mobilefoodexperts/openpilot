@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/tesla-hw1/banner.svg" alt="sunnypilot for Tesla Model S and Model X with Autopilot HW1" width="100%">
+  <img src="docs/assets/tesla-hw1/banner.jpg" alt="sunnypilot for Tesla Model S and Model X with Autopilot HW1" width="100%">
 </p>
 
 <p align="center">
@@ -80,7 +80,7 @@ Rules for future builds, how this branch is updated to newer sunnypilot, and les
 
 ## Credits
 
-A fork of [sunnypilot/sunnypilot](https://github.com/sunnypilot/sunnypilot), itself a fork of [commaai/openpilot](https://github.com/commaai/openpilot). The Tesla HW1 work comes from [P6g9YHK6/SunnyPilot-TeslaHW1](https://github.com/P6g9YHK6/SunnyPilot-TeslaHW1), based on [xnor](https://github.com/xnor-tech/openpilot) and the successor of [Tinkla (Unity)](https://github.com/BogGyver/openpilot). Tesla, Model S and Model X are trademarks of Tesla, Inc.; this project is not affiliated with Tesla or comma.ai. The car drawing is an original illustration.
+A fork of [sunnypilot/sunnypilot](https://github.com/sunnypilot/sunnypilot), itself a fork of [commaai/openpilot](https://github.com/commaai/openpilot). The Tesla HW1 work comes from [P6g9YHK6/SunnyPilot-TeslaHW1](https://github.com/P6g9YHK6/SunnyPilot-TeslaHW1), based on [xnor](https://github.com/xnor-tech/openpilot) and the successor of [Tinkla (Unity)](https://github.com/BogGyver/openpilot). Tesla, Model S and Model X are trademarks of Tesla, Inc.; this project is not affiliated with Tesla or comma.ai. The banner photo is the maintainer's own 2016 Model X (HW1).
 
 ## Upstream Updates
 | Upstream | Branch | Last Commit |
