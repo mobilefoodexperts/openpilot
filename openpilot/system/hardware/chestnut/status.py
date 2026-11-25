@@ -1,24 +1,13 @@
 import time
 
-from openpilot.common.hardware.usb import (CHESTNUT_PCIE_READY, CHESTNUT_POWERED_VOLTAGE, CHESTNUT_SLOW_USB_MBPS,
-                                            CHESTNUT_USB_PRODUCT, is_chestnut_usb_id)
+from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, is_chestnut_usb_id
 from openpilot.common.version import get_build_metadata, CHESTNUT_BRANCHES
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_compiled
-from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 
 
-CHESTNUT_RELEASE_BRANCHES = ("release-chestnut", "release-chestnut-staging")
+CHESTNUT_RELEASE_BRANCHES = ("release-chestnut", "release-chestnut-staging", "nightly-chestnut", "nightly-chestnut-dev")
+CHESTNUT_POWERED_VOLTAGE = 5000
 GPU_TEMP_LIMIT = 100.
-
-
-def chestnut_bundle_active(params, model_active, model_loading, offroad) -> bool:
-  # mirrors selfdrive/ui/sunnypilot/ui_state.py's model_runner_tinygrad fallback: a downloaded
-  # bundle (picked via pitstop) runs on the chestnut just the same as the default compiled
-  # model, so the offroad alerts below shouldn't nag about the literal default file existing
-  # when a perfectly good alternate model is already active.
-  source = get_active_source(chestnut=True, chestnut_active=model_active, chestnut_loading=model_loading, offroad=offroad)
-  active_bundle = params.get(ACTIVE_BUNDLE_KEYS[source])
-  return active_bundle is not None and active_bundle.get("runner") == "tinygrad"
 MEMORY_TEMP_LIMIT = 95.
 TEMP_HYSTERESIS = 5.
 
@@ -35,12 +24,13 @@ class ChestnutStatus:
     self.link_failures = 0
     self.model_loading_seen = False
     self.model_attempted = False
+    self.model_failed = False
     self.overheated = False
     self.usb_seen = False
     self.usb_failed = False
 
   def update(self, offroad: bool, branch: str, usb_state: list[dict], firmware_failed: bool,
-             model_loading: bool, model_active: bool | None, state, set_alert, params) -> None:
+             model_loading: bool, model_active: bool | None, state, set_alert) -> None:
     detected = [d for d in usb_state if is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True)]
     devices = [d for d in detected if is_chestnut_usb_id(d["vendorId"], d["productId"])]
     firmware_ok = len(devices) == 1 and devices[0]["product"] == CHESTNUT_USB_PRODUCT
@@ -54,14 +44,18 @@ class ChestnutStatus:
       self.link_failures = 0
       self.model_loading_seen = False
       self.model_attempted = False
+      self.model_failed = False
       self.usb_seen = firmware_ok
       self.usb_failed = False
 
     self.model_loading_seen |= model_loading
     self.model_attempted |= self.model_loading_seen and not model_loading and model_active is not None
+    self.model_failed |= not offroad and self.model_attempted and model_active is False and len(detected) > 0
 
-    if not offroad and self.usb_seen and not firmware_ok:
+    if not offroad and self.usb_seen and len(devices) != 1:
       self.usb_failed = True
+    if offroad and len(devices) == 1:
+      self.usb_failed = False
 
     if not offroad and state is not None:
       powered = state.supplyVoltage >= CHESTNUT_POWERED_VOLTAGE
@@ -71,7 +65,7 @@ class ChestnutStatus:
       self.power_seen |= powered
 
     if not offroad and self.model_attempted and state is not None:
-      self.link_failures = self.link_failures + 1 if state.pcieLtssm != CHESTNUT_PCIE_READY else 0
+      self.link_failures = self.link_failures + 1 if state.pcieLtssm != 0x78 else 0
       self.pcie_failed |= self.link_failures >= 2 or power_lost
       self.power_lost |= power_lost
 
@@ -83,6 +77,7 @@ class ChestnutStatus:
       self.power_unavailable = False
       self.power_lost = False
       self.power_restored = False
+      self.model_failed = False
 
     if state is not None:
       gpu_limit = GPU_TEMP_LIMIT - (TEMP_HYSTERESIS if self.overheated else 0.)
@@ -91,26 +86,22 @@ class ChestnutStatus:
 
     release = branch in CHESTNUT_RELEASE_BRANCHES
     missing = self.usb_failed or (offroad and release and time.monotonic() - self.started > 10. and len(detected) != 1)
-    slow_usb = offroad and len(devices) == 1 and devices[0]["speedMbps"] < CHESTNUT_SLOW_USB_MBPS
-    bundle_active = chestnut_bundle_active(params, model_active, model_loading, offroad)
-    big_model_available = (MODELS_DIR / 'big_driving_supercombo.onnx').is_file() or chestnut_compiled() or bundle_active
+    slow_usb = offroad and len(devices) == 1 and devices[0]["speedMbps"] < 5000
+    big_model_available = (MODELS_DIR / 'big_driving_supercombo.onnx').is_file() or chestnut_compiled()
     current_channel = get_build_metadata().channel
     chestnut_target = CHESTNUT_BRANCHES.get(current_channel)
     chestnut_needs_switch = len(devices) == 1 and not big_model_available and chestnut_target is not None
     set_alert("Offroad_ChestnutBranch", chestnut_needs_switch, chestnut_target if chestnut_needs_switch else None)
     set_alert("Offroad_ChestnutNotDetected", missing)
-    set_alert("Offroad_ChestnutOverheated", self.overheated, f"{state.tempC:.0f} °C" if state is not None else None)
+    set_alert("Offroad_ChestnutOverheated", self.overheated)
     set_alert("Offroad_ChestnutUsbSlow", slow_usb, f"{devices[0]['speedMbps']} Mbps" if slow_usb else None)
     if self.power_lost:
-      pcie_alert = ("Chestnut power restored. 12V is stable again, cycle ignition." if self.power_restored else
-                    "Chestnut power disconnected. Check 12V connection, then cycle ignition." if self.power_unavailable else
-                    "Chestnut power lost. Possibly caused by an engine-crank voltage drop. Check 12V connection, then cycle ignition.")
+      pcie_alert = ("Chestnut power restored. Restart the car to retry." if self.power_restored else
+                    "Chestnut power disconnected. Check the 12V connection, then restart the car." if self.power_unavailable else
+                    "Chestnut power lost. Check the 12V connection, then restart the car.")
     else:
-      pcie_alert = "Chestnut GPU unavailable. PCIe link is not up. Check the GPU is securely seated."
+      pcie_alert = "Chestnut GPU unavailable. Check the GPU is securely seated, then restart the car."
     set_alert("Offroad_ChestnutPcieUnavailable", self.pcie_failed, pcie_alert)
-    set_alert("Offroad_ChestnutUncompiled", offroad and firmware_ok and not chestnut_compiled() and not bundle_active)
+    set_alert("Offroad_ChestnutModelError", self.model_failed and not (missing or self.pcie_failed))
     set_alert("Offroad_ChestnutUpdateFailed", offroad and firmware_failed)
-    # bridges self.overheated's hysteresis-aware latch to pitstop, which otherwise
-    # has no way to apply the same GPU_TEMP_LIMIT/TEMP_HYSTERESIS logic itself
-    params.put_bool("ChestnutOverheated", self.overheated)
     self.offroad = offroad

@@ -18,21 +18,21 @@ function agnos_init {
   sudo chmod 660 /dev/adsprpc-smd /dev/ion /dev/kgsl-3d0
 
   # Check if AGNOS update is required
-  if [ $(< /VERSION) != "$AGNOS_VERSION" ]; then
+  if [ "$(< /VERSION)" != "$AGNOS_VERSION" ]; then
     AGNOS_PY="$DIR/openpilot/common/hardware/comma/agnos.py"
     MANIFEST="$DIR/openpilot/system/hardware/comma/agnos.json"
-    if $AGNOS_PY --verify $MANIFEST; then
+    if "$AGNOS_PY" --verify "$MANIFEST"; then
       sudo reboot
     fi
     while true; do
-      $DIR/openpilot/common/hardware/comma/updater $AGNOS_PY $MANIFEST
+      "$DIR/openpilot/common/hardware/comma/updater" "$AGNOS_PY" "$MANIFEST"
     done
   fi
 }
 
 function launch {
   # Remove orphaned git lock if it exists on boot
-  [ -f "$DIR/.git/index.lock" ] && rm -f $DIR/.git/index.lock
+  [ -f "$DIR/.git/index.lock" ] && rm -f "$DIR/.git/index.lock"
 
   # Check to see if there's a valid overlay-based update available. Conditions
   # are as follows:
@@ -44,7 +44,7 @@ function launch {
   #    that completed successfully and synced to disk.
 
   if [ -f "${DIR}/.overlay_init" ]; then
-    find ${DIR}/.git -newer ${DIR}/.overlay_init | grep -q '.' 2> /dev/null
+    find "${DIR}/.git" -newer "${DIR}/.overlay_init" | grep -q '.' 2> /dev/null
     if [ $? -eq 0 ]; then
       echo "${DIR} has been modified, skipping overlay update installation"
     else
@@ -53,9 +53,11 @@ function launch {
           echo "Valid overlay update found, installing"
           LAUNCHER_LOCATION="${BASH_SOURCE[0]}"
 
-          mv $DIR /data/safe_staging/old_openpilot
-          mv "${STAGING_ROOT}/finalized" $DIR
-          cd $DIR
+          mv "$DIR" /data/safe_staging/old_openpilot
+          mv "${STAGING_ROOT}/finalized" "$DIR"
+          cd "$DIR"
+          # releases before the openpilot/ move can't swap AGNOS on newer AGNOS, use ours
+          [ ! -L system/hardware/tici/agnos.json ] && /data/safe_staging/old_openpilot/openpilot/common/hardware/comma/agnos.py --verify system/hardware/tici/agnos.json && sudo reboot
 
           echo "Restarting launch script ${LAUNCHER_LOCATION}"
           unset AGNOS_VERSION
@@ -69,7 +71,7 @@ function launch {
   fi
 
   # handle pythonpath
-  ln -sfn $(pwd) /data/pythonpath
+  ln -sfn "$(pwd)" /data/pythonpath
   export PYTHONPATH="$PWD"
 
   # use this checkout's own venv (source builds keep their own .venv;
@@ -78,10 +80,10 @@ function launch {
   # guarantees .venv survives an update intact - this just turns a missing/
   # broken .venv into a clearly-logged warning instead of a silent, confusing
   # crash further down (e.g. for a candidate finalized before this fix shipped).
-  if [ -f "$DIR/.venv/bin/activate" ]; then
+  if [ -f "$DIR/.venv/bin/activate" ] && "$DIR/.venv/bin/python3" -c "import sys" >/dev/null 2>&1; then
     source "$DIR/.venv/bin/activate"
   elif [ -f /usr/local/venv/bin/activate ]; then
-    echo "WARNING: $DIR/.venv missing; falling back to /usr/local/venv (likely a broken/incomplete update)" | tee -a /tmp/launch_log
+    echo "WARNING: $DIR/.venv missing or broken; falling back to /usr/local/venv" | tee -a /tmp/launch_log
     source /usr/local/venv/bin/activate
   else
     echo "WARNING: no venv found at $DIR/.venv or /usr/local/venv; continuing with bare python3 (this will likely fail)" | tee -a /tmp/launch_log
@@ -105,7 +107,7 @@ function launch {
 
   # start manager
   cd openpilot/system/manager
-  if [ ! -f $DIR/prebuilt ]; then
+  if [ ! -f "$DIR/prebuilt" ]; then
     ./build.py
   fi
   ./manager.py

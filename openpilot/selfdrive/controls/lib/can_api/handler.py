@@ -10,7 +10,9 @@ from opendbc.car.values import PLATFORMS
 class CanApiHandler:
   def __init__(self):
     self.params = Params()
-    self.pm = messaging.PubMaster(['sendcan'])
+    # sendcan publisher is created lazily, only for an offroad send: card publishes
+    # sendcan while driving, and a second publisher on the same topic can take it over.
+    self._pm = None
     self._packer = None
     self._dbc = None
     self._dbc_names = None
@@ -53,7 +55,13 @@ class CanApiHandler:
     return self._packer
 
   def send_raw(self, address: int, data: bytes, bus: int) -> bool:
-    self.pm.send('sendcan', can_list_to_can_capnp([CanData(address, data, bus)], msgtype='sendcan'))
+    if not self.params.get_bool("IsOffroad"):
+      # never compete with card for sendcan while the car is on
+      self._pm = None
+      return False
+    if self._pm is None:
+      self._pm = messaging.PubMaster(['sendcan'])
+    self._pm.send('sendcan', can_list_to_can_capnp([CanData(address, data, bus)], msgtype='sendcan'))
     return True
 
   def send_signal(self, msg_name: str, values: dict[str, float], bus: int = 0) -> dict | None:
@@ -63,7 +71,8 @@ class CanApiHandler:
     addr, dat, bus_out = packer.make_can_msg(msg_name, bus, values)
     if addr == 0 and len(dat) == 0:
       return None
-    self.send_raw(addr, dat, bus_out)
+    if not self.send_raw(addr, dat, bus_out):
+      return None
     return {'address': addr, 'data': dat.hex(), 'bus': bus_out}
 
   def get_signals(self) -> list[dict]:

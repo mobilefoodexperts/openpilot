@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import fcntl
-import json
 import os
 import queue
-import re
 import struct
 import subprocess
 import sys
@@ -29,6 +27,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.system.statsd import statlog
 from openpilot.system.hardware.power_monitoring import PowerMonitoring
 from openpilot.system.hardware.fan_controller import FanController
+from openpilot.system.hardware.chestnut.monitoring import chestnut_state_thread
 from openpilot.system.hardware.chestnut.status import ChestnutStatus
 from openpilot.common.version import terms_version, training_version, get_build_metadata, terms_version_sp
 
@@ -41,13 +40,11 @@ DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect 
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
 ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycle
 
-_FW_VERSION_RE = re.compile(r"^custom (.+)-CLEAN$")
-
-
 class Chestnut:
-  # flash offroad, modeld ignores chestnut until the product string matches
+  # flash before going onroad, modeld ignores chestnut until the product string matches
   MAX_ATTEMPTS = 3
   RETRY_INTERVAL = 20.
+  STARTUP_TIMEOUT = 30.
 
   def __init__(self):
     self.thread: threading.Thread | None = None
@@ -55,7 +52,10 @@ class Chestnut:
     self.last_attempt = 0.
     self.flashed = False
     self.mismatch = False
-    self.last_error: str | None = None
+
+  @property
+  def flashing(self) -> bool:
+    return self.thread is not None and self.thread.is_alive() and time.monotonic() - self.last_attempt < self.STARTUP_TIMEOUT
 
   @property
   def failed(self) -> bool:
@@ -66,15 +66,8 @@ class Chestnut:
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
     cloudlog.event("chestnut flash done", returncode=ret.returncode, output=ret.stdout[-1000:], error=ret.returncode != 0)
     self.flashed = ret.returncode == 0
-    self.last_error = None if self.flashed else ret.stdout[-500:]
 
-  def update(self, offroad: bool, usb_state: list[dict], params: Params) -> None:
-    try:
-      self._update(offroad, usb_state)
-    finally:
-      self._write_status(params, usb_state)
-
-  def _update(self, offroad: bool, usb_state: list[dict]) -> None:
+  def update(self, offroad: bool, usb_state: list[dict]) -> None:
     self.mismatch = any(is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True) and
                         d["product"] != CHESTNUT_USB_PRODUCT for d in usb_state)
     if not self.mismatch:
@@ -85,7 +78,7 @@ class Chestnut:
       return
     if self.thread is not None and self.thread.is_alive():
       return
-    if time.monotonic() - self.last_attempt < self.RETRY_INTERVAL:
+    if self.attempts > 0 and time.monotonic() - self.last_attempt < self.RETRY_INTERVAL:
       return
 
     self.attempts += 1
@@ -93,31 +86,6 @@ class Chestnut:
     cloudlog.warning(f"chestnut firmware out of date, flashing (attempt {self.attempts})")
     self.thread = threading.Thread(target=self.flash, daemon=True)
     self.thread.start()
-
-  def _write_status(self, params: Params, usb_state: list[dict]) -> None:
-    """Purely informational - read by pitstop to show firmware version/update
-    status in the GPU card. hardwared.py remains the only process that ever
-    touches the chestnut USB device; this is a one-way status export, not a
-    control channel."""
-    detected_version = None
-    for d in usb_state:
-      if is_chestnut_usb_id(d["vendorId"], d["productId"], include_bootloader=True):
-        m = _FW_VERSION_RE.match(d["product"])
-        detected_version = m.group(1) if m else (d["product"] or None)
-        break
-    status = {
-      "detected_version": detected_version,
-      "expected_version": CHESTNUT_FW_VERSION,
-      "mismatch": self.mismatch,
-      "in_progress": self.thread is not None and self.thread.is_alive(),
-      "attempt": self.attempts,
-      "max_attempts": self.MAX_ATTEMPTS,
-      "flashed": self.flashed,
-      "failed": self.failed,
-      "last_error": self.last_error,
-      "ts": time.time(),
-    }
-    params.put("ChestnutFlashStatus", json.dumps(status))
 
 
 ThermalBand = namedtuple("ThermalBand", ['min_temp', 'max_temp'])
@@ -232,7 +200,7 @@ def hw_state_thread(end_event, hw_queue):
 
 
 def hardware_thread(end_event, hw_queue) -> None:
-  system_stats = LinuxSystemStats()
+  system_stats = LinuxSystemStats() if sys.platform == "linux" else None
   pm = messaging.PubMaster(['deviceState'])
   sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates", "chestnutState"], poll="pandaStates")
 
@@ -259,7 +227,7 @@ def hardware_thread(end_event, hw_queue) -> None:
     network_strength=NetworkStrength.unknown,
     network_stats={'wwanTx': -1, 'wwanRx': -1},
     modem_temps=[],
-    usb_state=[],
+    usb_state=get_usb_state(),
   )
 
   all_temp_filter = FirstOrderFilter(0., TEMP_TAU, DT_HW, initialized=False)
@@ -284,6 +252,12 @@ def hardware_thread(end_event, hw_queue) -> None:
   chestnut = Chestnut()
   chestnut_status = ChestnutStatus()
   branch = get_short_branch()
+
+  build_metadata = get_build_metadata()
+  is_unsupported_combo = COMMA_HARDWARE and HARDWARE.get_device_type() == "tici" and build_metadata.channel_type != "tici"
+  startup_conditions["not_tici"] = not is_unsupported_combo
+  onroad_conditions["not_tici"] = not is_unsupported_combo
+  set_offroad_alert_if_changed("Offroad_TiciSupport", is_unsupported_combo, extra_text=build_metadata.channel)
 
   while not end_event.is_set():
     sm.update(PANDA_STATES_TIMEOUT)
@@ -325,10 +299,13 @@ def hardware_thread(end_event, hw_queue) -> None:
     except queue.Empty:
       pass
 
+    memory_usage = system_stats.memory_usage_percent() if system_stats is not None else 0.
+    cpu_usage = system_stats.cpu_usage_percent() if system_stats is not None else []
+
     msg.deviceState.freeSpacePercent = get_available_percent(default=100.0)
-    msg.deviceState.memoryUsagePercent = int(round(system_stats.memory_usage_percent()))
+    msg.deviceState.memoryUsagePercent = int(round(memory_usage))
     msg.deviceState.gpuUsagePercent = int(round(HARDWARE.get_gpu_usage_percent()))
-    online_cpu_usage = [int(round(n)) for n in system_stats.cpu_usage_percent()]
+    online_cpu_usage = [int(round(n)) for n in cpu_usage]
     offline_cpu_usage = [0., ] * (len(msg.deviceState.cpuTempC) - len(online_cpu_usage))
     msg.deviceState.cpuUsagePercent = online_cpu_usage + offline_cpu_usage
 
@@ -344,12 +321,12 @@ def hardware_thread(end_event, hw_queue) -> None:
     msg.deviceState.screenBrightnessPercent = HARDWARE.get_screen_brightness()
 
     set_usb_state(msg.deviceState, last_hw_state.usb_state)
-    chestnut.update(started_ts is None, last_hw_state.usb_state, params)
+    chestnut.update(started_ts is None, last_hw_state.usb_state)
     chestnut_state = sm["chestnutState"]
     chestnut_valid = sm.alive["chestnutState"] and sm.valid["chestnutState"]
-    chestnut_status.update(started_ts is None, branch, last_hw_state.usb_state, chestnut.failed,
+    chestnut_status.update(started_ts is None or not onroad_conditions["ignition"], branch, last_hw_state.usb_state, chestnut.failed,
                            params.get_bool("ChestnutLoading"), params.get("ChestnutActive"),
-                           chestnut_state if chestnut_valid else None, set_offroad_alert_if_changed, params)
+                           chestnut_state if chestnut_valid else None, set_offroad_alert_if_changed)
     # this subset is only used for offroad
     temp_sources = [
       msg.deviceState.memoryTempC,
@@ -394,6 +371,8 @@ def hardware_thread(end_event, hw_queue) -> None:
     # must be at an engageable thermal band to go onroad
     startup_conditions["device_temp_engageable"] = thermal_status < ThermalStatus.overheated
 
+    startup_conditions["not_flashing_chestnut"] = not chestnut.flashing
+
     # ensure device is fully booted
     startup_conditions["device_booted"] = startup_conditions.get("device_booted", False) or HARDWARE.booted()
 
@@ -401,16 +380,6 @@ def hardware_thread(end_event, hw_queue) -> None:
     offroad_mode = params.get_bool("OffroadMode")
     startup_conditions["not_always_offroad"] = not offroad_mode
     onroad_conditions["not_always_offroad"] = not offroad_mode
-
-    # if an unsupported device and branch is detected, going onroad is blocked
-    # only allow going onroad when:
-    # - TIZI, or
-    # - TICI and channel_type is "tici"
-    build_metadata = get_build_metadata()
-    is_unsupported_combo = COMMA_HARDWARE and HARDWARE.get_device_type() == "tici" and build_metadata.channel_type != "tici"
-    startup_conditions["not_tici"] = not is_unsupported_combo
-    onroad_conditions["not_tici"] = not is_unsupported_combo
-    set_offroad_alert("Offroad_TiciSupport", is_unsupported_combo, extra_text=build_metadata.channel)
 
     # if the temperature enters the danger zone, go offroad to cool down
     onroad_conditions["device_temp_good"] = thermal_status < ThermalStatus.critical
@@ -469,10 +438,6 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # Offroad power monitoring
     voltage = None if peripheralState.pandaType == log.PandaState.PandaType.unknown else peripheralState.voltage
-
-    # GitHub runner auto off: 9V is used as the threshold because most desktop runners
-    # will rarely exceed 5V so 9V is set as our buffer between desk use and car use.
-    params.put_bool("GithubRunnerSufficientVoltage", ((voltage or 0) and voltage > 9000))
 
     power_monitor.calculate(voltage, onroad_conditions["ignition"])
     msg.deviceState.offroadPowerUsageUwh = power_monitor.get_power_used()
@@ -565,6 +530,7 @@ def main():
 
   if COMMA_HARDWARE:
     threads.append(threading.Thread(target=touch_thread, args=(end_event,)))
+    threads.append(threading.Thread(target=chestnut_state_thread, args=(end_event,)))
 
   for t in threads:
     t.start()

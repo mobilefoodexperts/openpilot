@@ -21,7 +21,7 @@ dependencies = [
   "tqdm",         # cars (fw_versions.py) on start + many one-off uses
 
   # core
-  "scons==4.10.1",  # 4.11 removed the qt3 tool still used to build Cabana
+  "scons",
   "pycapnp==2.1.0",  # 2.2 introduces a memory leak due to cyclic references
   "numpy >=2.0",
 
@@ -47,7 +47,6 @@ dependencies = [
 
   # these should be removed
   "pyzmq",
-  "sentry-sdk",
   "setproctitle",
   "jeepney",
   "zstandard",  # this can go once we're on Python 3.14+
@@ -149,6 +148,12 @@ exclude = [
   "generated",
 ]
 lint.flake8-implicit-str-concat.allow-multiline = false
+
+[tool.ruff.lint.per-file-ignores]
+# PitStop (fork feature) is a small local web UI: its short file reads and nmcli/ip calls
+# run inline in aiohttp handlers on purpose, so the async-blocking rules don't apply.
+"openpilot/pitstop/**" = ["ASYNC"]
+"openpilot/pitstop/schema.py" = ["E501"]  # long OpenAPI description strings
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.time".msg = "Use time.monotonic. time.time can skip due to its reference clock, you probably want a monotonic clock"

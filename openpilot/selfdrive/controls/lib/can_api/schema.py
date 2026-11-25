@@ -1,4 +1,3 @@
-from opendbc.can.dbc import DBC
 
 
 def generate_openapi_schema(host: str = "localhost", port: int = 8700, dbc=None) -> dict:

@@ -4,6 +4,7 @@ import re
 import datetime
 import subprocess
 import shutil
+import sys
 import signal
 import fcntl
 import threading
@@ -173,20 +174,56 @@ def init_overlay() -> None:
 
 
 def sync_venv(target_dir: str) -> None:
-  """Ensure target_dir's own .venv matches its own uv.lock/pyproject.toml, so the
-  candidate that gets swapped in at BASEDIR is runnable with zero network access at
-  car-start time. Must be called against the update candidate's own path, never
-  BASEDIR - this provisions the NEW checkout, not the one currently running."""
-  if shutil.which("uv") is None:
-    raise RuntimeError("uv not found on PATH; cannot provision venv for update candidate")
-  cloudlog.info(f"syncing venv for update candidate at {target_dir}")
-  # --all-extras, matching tools/setup_dependencies.sh: a bare `uv sync` (just the
-  # "standalone" default group) covers the driving stack's own imports, but
-  # launch_chffrplus.sh's build.py/SConstruct step - which runs on every boot when
-  # `prebuilt` is absent - needs the "tools" extra too (comma-deps-ncurses, imgui,
-  # ...) to build at all. Confirmed on-device: a narrower sync here left the device
-  # stuck on a "failed to build" screen with ModuleNotFoundError: ncurses.
-  run(["uv", "sync", "--frozen", "--all-extras"], target_dir)
+  """Provision target_dir's own .venv from its uv.lock (adds the fork's extra deps, e.g.
+  PitStop's aiohttp). Never blocks an update: if anything goes wrong the .venv is removed,
+  and launch_chffrplus.sh falls back to AGNOS's /usr/local/venv - the same environment
+  upstream sunnypilot always uses.
+
+  The venv is created --relocatable because it's built here in the staging dir and then
+  moved to BASEDIR; a default uv venv hard-codes its own path in bin/activate and in
+  script shebangs, which would point at a directory that no longer exists after the swap."""
+  venv_dir = os.path.join(target_dir, ".venv")
+
+  def drop_venv(reason: str) -> None:
+    cloudlog.warning(f"sync_venv: {reason}; using AGNOS /usr/local/venv instead")
+    shutil.rmtree(venv_dir, ignore_errors=True)
+
+  uv = shutil.which("uv")
+  if uv is None:
+    drop_venv("uv not found on PATH")
+    return
+
+  # the real interpreter behind whatever venv updated runs in (never another venv's shim)
+  base_python = os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable)
+  env: dict[str, str] = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir,
+         "UV_CACHE_DIR": "/data/uv_cache"}
+  env.pop("VIRTUAL_ENV", None)
+  try:
+    cloudlog.info(f"syncing venv for update candidate at {target_dir}")
+    # recreate from scratch: a copied-over venv may be non-relocatable or point elsewhere
+    shutil.rmtree(venv_dir, ignore_errors=True)
+    subprocess.check_output([uv, "venv", "--relocatable", "--python", base_python, venv_dir],
+                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8')
+    # --all-extras, matching tools/setup_dependencies.sh: the build step needs the
+    # "tools" extra too (comma-deps-ncurses, imgui, ...)
+    subprocess.check_output([uv, "sync", "--frozen", "--all-extras"],
+                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8', timeout=30*60)
+  except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+    output = getattr(e, "output", "") or ""
+    drop_venv(f"venv sync failed: {e} {str(output)[-2000:]}")
+    return
+
+  # uv may recreate the env if it disagrees with the request; make sure what we ship
+  # is still relocatable and doesn't point back into the staging dir
+  try:
+    with open(os.path.join(venv_dir, "pyvenv.cfg")) as f:
+      relocatable = "relocatable = true" in f.read()
+    with open(os.path.join(venv_dir, "bin", "activate")) as f:
+      stale = "safe_staging" in f.read()
+  except OSError:
+    relocatable, stale = False, True
+  if not relocatable or stale:
+    drop_venv("synced venv is not relocatable")
 
 
 def finalize_update() -> None:
@@ -205,17 +242,13 @@ def finalize_update() -> None:
   run(["git", "reset", "--hard"], FINALIZED)
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
 
-  # Self-heal .venv and the static model weights against THIS candidate's own
-  # lockfile/tinygrad pin. Deliberately done here (background staging, device
-  # still drivable on the old BASEDIR) rather than at launch_chffrplus.sh/boot
-  # time, where a missing network would leave the car unable to start. No
-  # try/except: any failure here must propagate so set_consistent_flag(True)
-  # below is never reached - a broken update must never be marked ready to
-  # swap in; fail the update, not the car.
+  # Self-heal .venv against THIS candidate's own lockfile. Deliberately done here
+  # (background staging, device still drivable on the old BASEDIR) rather than at
+  # boot time, where a missing network would leave the car unable to start. It never
+  # fails the update: on any problem it removes .venv so the AGNOS venv is used.
+  # (The fork's static model .pkl self-heal was dropped: sunnypilot removed model
+  # chunking in #38941 and rebuilds the default model files at build time.)
   sync_venv(FINALIZED)
-  from openpilot.selfdrive.modeld.helpers import chestnut_present
-  from openpilot.sunnypilot.models.static_provisioning import verify_and_refresh_static_models
-  verify_and_refresh_static_models(FINALIZED, chestnut=chestnut_present())
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
@@ -238,6 +271,8 @@ def handle_agnos_update() -> None:
   cloudlog.info(f"Beginning background installation for AGNOS {updated_version}")
 
   manifest_path = os.path.join(OVERLAY_MERGED, "openpilot/system/hardware/comma/agnos.json")
+  if not os.path.isfile(manifest_path):  # releases before the openpilot/ move
+    manifest_path = os.path.join(OVERLAY_MERGED, "system/hardware/tici/agnos.json")
   target_slot_number = get_target_slot_number()
   flash_agnos_update(manifest_path, target_slot_number, cloudlog)
 
@@ -406,13 +441,9 @@ class Updater:
       ["git", "checkout", "--force", "--no-recurse-submodules", "-B", branch, "FETCH_HEAD"],
       ["git", "branch", "--set-upstream-to", f"origin/{branch}"],
       ["git", "reset", "--hard"],
-      # -e excludes: .venv/ (created by uv sync) and the static model .pkl weights
-      # under selfdrive/modeld/models/ are both gitignored, so a plain -xdff would
-      # delete them from this overlay view - and finalize_update() copies THIS view
-      # into the update candidate, so every update would silently wipe them from the
-      # swapped-in checkout. sync_venv()/verify_and_refresh_static_models() below
-      # then true up whatever survives against this candidate's own lockfile/pin.
-      ["git", "clean", "-xdff", "-e", ".venv/", "-e", "openpilot/selfdrive/modeld/models/*.pkl*"],
+      # .venv is not kept: sync_venv() rebuilds it for the candidate anyway, and keeping
+      # the old one would only copy 1-2 GB into the staging dir to be deleted
+      ["git", "clean", "-xdff"],
       ["git", "submodule", "sync"],
       ["git", "submodule", "update", "--init", "--recursive"],
       ["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"],

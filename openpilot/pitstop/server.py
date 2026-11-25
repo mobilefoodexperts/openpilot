@@ -25,10 +25,10 @@ logger = logging.getLogger("pitstop")
 async def access_log_middleware(request, handler):
   if request.path == "/api/logs":
     return await handler(request)
-  t0 = time.time()
+  t0 = time.monotonic()
   try:
     response = await handler(request)
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       status = response.status
       msg = f"[{status}] {request.method} {request.path} ({elapsed:.0f}ms)"
@@ -40,12 +40,12 @@ async def access_log_middleware(request, handler):
         logger.info(msg)
     return response
   except web.HTTPException as ex:
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       logger.warning(f"[{ex.status}] {request.method} {request.path} ({elapsed:.0f}ms)")
     raise
   except Exception:
-    elapsed = (time.time() - t0) * 1000
+    elapsed = (time.monotonic() - t0) * 1000
     if request.path.startswith("/api/"):
       logger.exception(f"[500] {request.method} {request.path} ({elapsed:.0f}ms)")
     raise
@@ -68,15 +68,14 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     self._cockpit_data = {}
     self._is_engaged = False
     self._static_version = self._hash_static()
-    if not os.path.isdir(PITSTOP_DATA_DIR):
-      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} does not exist")
+    os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
     try:
       test_file = os.path.join(PITSTOP_DATA_DIR, ".write_test")
       with open(test_file, "w") as f:
         f.write("test")
       os.remove(test_file)
     except Exception as e:
-      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} is not writable: {e}")
+      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} is not writable: {e}") from e
     for target in (
       self._model_manager_loop,
       self._device_state_loop,
@@ -89,6 +88,18 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
   def build_app(self):
     app = web.Application()
     app.middlewares.append(access_log_middleware)
+
+    params = self.params
+
+    @web.middleware
+    async def offroad_only_writes(request, handler):
+      # PitStop is unauthenticated on the local network: never let it change settings,
+      # restore backups, reboot or send CAN while the car is on
+      if request.method in ("POST", "PUT", "PATCH", "DELETE") and not params.get_bool("IsOffroad"):
+        raise web.HTTPConflict(text="PitStop changes are only allowed while the car is off")
+      return await handler(request)
+
+    app.middlewares.append(offroad_only_writes)
 
     # System
     app.router.add_get("/api/status", self.handle_status)
@@ -212,7 +223,7 @@ def main():
 
 if __name__ == "__main__":
   raise SystemExit(
-    "ERROR: pitstop.server must not be started directly.\n"
-    "It is managed by the system manager (manager.py).\n"
-    "For manual testing use: /usr/local/venv/bin/python3 -m pitstop.server"
+    "ERROR: pitstop.server must not be started directly.\n" +
+    "It is managed by the system manager (manager.py).\n" +
+    "For manual testing use: python3 -m openpilot.pitstop.launcher"
   )

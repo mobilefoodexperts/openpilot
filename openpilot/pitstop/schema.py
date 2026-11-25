@@ -1,4 +1,3 @@
-from opendbc.can.dbc import DBC
 
 
 def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -> dict:
@@ -282,7 +281,7 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
         "get": {
           "tags": ["models"],
           "summary": "List available model bundles",
-          "responses": {"200": {"description": "List of bundles; a chestnut-sourced bundle that's "
+          "responses": {"200": {"description": "List of bundles; a chestnut-sourced bundle that's " +
                                                 "currently unselectable carries an unavailableReason string"}},
         }
       },
@@ -290,13 +289,8 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
         "get": {
           "tags": ["models"],
           "summary": "Get the active model bundle",
-          "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom', from "
-                                                "deviceState.chestnutPresent - the same VID/PID-only signal the "
-                                                "model manager daemon itself uses), chestnutHardwareState/-Label/"
-                                                "-Available when relevant (chestnutAvailable mirrors the same "
-                                                "CHESTNUT_USABLE_STATES gate used for per-bundle selectability), "
-                                                "and staticProvisioning (outcome of the post-update default-model "
-                                                "self-heal, if any)"}},
+          "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom', from deviceState.chestnutPresent) " +
+                                                "and chestnutHardwareState/-Label/-Available when relevant"}},
         }
       },
       "/api/models/{name}": {

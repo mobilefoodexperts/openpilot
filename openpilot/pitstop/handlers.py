@@ -13,6 +13,7 @@ from openpilot.common.hardware.usb import (CHESTNUT_SLOW_USB_MBPS, CHESTNUT_USAB
                                             get_chestnut_hardware_state, get_usb_state, is_chestnut_usb_id)
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
+from openpilot.common.hardware.hw import Paths
 from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.system.hardware.chestnut.status import GPU_TEMP_LIMIT, MEMORY_TEMP_LIMIT, TEMP_HYSTERESIS
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
@@ -349,7 +350,7 @@ class HandlerMixin:
         freqs = [int(x) for x in avail_freqs.split()]
         times = [int(x) for x in clock_stats.split()]
         total_ns = sum(times)
-        for hz, ns in zip(freqs, times):
+        for hz, ns in zip(freqs, times, strict=False):
           clocks.append({
             "mhz": hz // 1000000,
             "time_ns": ns,
@@ -619,7 +620,7 @@ class HandlerMixin:
     fname = f"backup-{timestamp}.json"
     fpath = os.path.join(backup_dir, fname)
     with open(fpath, "w") as f:
-      json.dump({"created": time.time(), "params": config}, f)
+      json.dump({"created": time.time(), "params": config}, f)  # noqa: TID251 wall-clock timestamp
     logger.info(f"[BACKUP] created {fname} ({len(config)} params)")
     return web.json_response({"name": fname, "status": "created"})
 
@@ -643,14 +644,14 @@ class HandlerMixin:
     field = await reader.next()
     if field is None or field.name != "file":
       raise web.HTTPBadRequest(text="Missing file field")
-    filename = field.filename or f"backup-upload-{int(time.time())}.json"
+    filename = field.filename or f"backup-upload-{int(time.time())}.json"  # noqa: TID251 wall-clock name
     if not filename.endswith(".json"):
       filename += ".json"
     data = await field.read()
     try:
       parsed = json.loads(data)
     except json.JSONDecodeError:
-      raise web.HTTPBadRequest(text="Invalid JSON file")
+      raise web.HTTPBadRequest(text="Invalid JSON file") from None
     if not isinstance(parsed, dict) or "params" not in parsed:
       raise web.HTTPBadRequest(text="Not a valid backup file (missing 'params')")
     fpath = os.path.normpath(os.path.join(backup_dir, filename))
@@ -905,7 +906,8 @@ class HandlerMixin:
       data = bytes.fromhex(data_hex)
     except ValueError:
       raise web.HTTPBadRequest(text="Invalid hex data") from None
-    self._can_handler.send_raw(int(address), data, int(bus))
+    if not self._can_handler.send_raw(int(address), data, int(bus)):
+      raise web.HTTPConflict(text="CAN send is only allowed while the car is off")
     return web.json_response({"address": int(address), "data": data.hex(), "bus": int(bus)})
 
   async def handle_error_log(self, request):
