@@ -68,8 +68,7 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
     self._cockpit_data = {}
     self._is_engaged = False
     self._static_version = self._hash_static()
-    if not os.path.isdir(PITSTOP_DATA_DIR):
-      raise SystemExit(f"ERROR: {PITSTOP_DATA_DIR} does not exist")
+    os.makedirs(PITSTOP_DATA_DIR, exist_ok=True)
     try:
       test_file = os.path.join(PITSTOP_DATA_DIR, ".write_test")
       with open(test_file, "w") as f:
@@ -89,6 +88,18 @@ class PitStopServer(HandlerMixin, SubscriberMixin, ModelMixin, OsmMixin, Diagnos
   def build_app(self):
     app = web.Application()
     app.middlewares.append(access_log_middleware)
+
+    params = self.params
+
+    @web.middleware
+    async def offroad_only_writes(request, handler):
+      # PitStop is unauthenticated on the local network: never let it change settings,
+      # restore backups, reboot or send CAN while the car is on
+      if request.method in ("POST", "PUT", "PATCH", "DELETE") and not params.get_bool("IsOffroad"):
+        raise web.HTTPConflict(text="PitStop changes are only allowed while the car is off")
+      return await handler(request)
+
+    app.middlewares.append(offroad_only_writes)
 
     # System
     app.router.add_get("/api/status", self.handle_status)

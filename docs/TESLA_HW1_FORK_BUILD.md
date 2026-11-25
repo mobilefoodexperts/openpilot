@@ -80,6 +80,9 @@ scons -j$(nproc)           # build for PC
 ## Known limits
 
 - `updated.py` `sync_venv()` builds a **relocatable** `.venv` in the staging dir (a default uv venv hard-codes its path and breaks when the update is moved into place) and never fails an update: if uv is missing or the sync fails it removes `.venv`, and `launch_chffrplus.sh` uses AGNOS's `/usr/local/venv` like upstream. On a fresh install there is no `.venv`, so PitStop (needs `aiohttp`) may not start until the first update.
+- PitStop runs on port 8082 (copyparty owns 8080; :80 still redirects to PitStop), creates `/data/pitstop` itself, and starts through `pitstop/launcher.py`, which idles instead of crash-looping if PitStop can't start. It refuses every change (settings, backup restore, reboot, CAN send) unless `IsOffroad` is set, because it has no login and anyone on the same Wi-Fi can reach it.
+- Legacy Model S/X (HW1-3) report **no blind-spot sensors** (`has_bsm` in opendbc's `sunnypilot/car/interfaces.py`): `update_legacy` never fills blind-spot data, so BSM-gated lane-change features stay off.
+- To confirm on the car: `safety/ignition.h` treats any `0x201` frame on bus 0/2 as ignition on (from the original fork). If HW1 sends 0x201 while parked, the comma would never go offroad (no updates, 12 V drain).
 - PitStop only sends CAN messages while the car is off (`selfdrive/controls/lib/can_api/handler.py`), so it can never compete with `card` for `sendcan` while driving.
 - The fork's static model `.pkl` self-heal and `chestnut_link.py` were removed in Nov 2026: sunnypilot removed model chunking (#38941), and they would have made every update fail.
 - PitStop's Chestnut flash/overheat and model-provisioning cards show empty, because nothing writes those params any more.

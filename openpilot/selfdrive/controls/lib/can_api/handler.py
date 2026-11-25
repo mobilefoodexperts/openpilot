@@ -55,7 +55,7 @@ class CanApiHandler:
     return self._packer
 
   def send_raw(self, address: int, data: bytes, bus: int) -> bool:
-    if self.params.get_bool("IsOnroad"):
+    if not self.params.get_bool("IsOffroad"):
       # never compete with card for sendcan while the car is on
       self._pm = None
       return False

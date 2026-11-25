@@ -4,6 +4,7 @@ import re
 import datetime
 import subprocess
 import shutil
+import sys
 import signal
 import fcntl
 import threading
@@ -192,8 +193,10 @@ def sync_venv(target_dir: str) -> None:
     drop_venv("uv not found on PATH")
     return
 
-  base_python = "/usr/local/venv/bin/python3" if os.path.exists("/usr/local/venv/bin/python3") else (shutil.which("python3") or "python3")
-  env = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir}
+  # the real interpreter behind whatever venv updated runs in (never another venv's shim)
+  base_python = os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable)
+  env = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir,
+         "UV_CACHE_DIR": "/data/uv_cache"}
   env.pop("VIRTUAL_ENV", None)
   try:
     cloudlog.info(f"syncing venv for update candidate at {target_dir}")
@@ -204,10 +207,23 @@ def sync_venv(target_dir: str) -> None:
     # --all-extras, matching tools/setup_dependencies.sh: the build step needs the
     # "tools" extra too (comma-deps-ncurses, imgui, ...)
     subprocess.check_output([uv, "sync", "--frozen", "--all-extras"],
-                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8')
-  except (subprocess.CalledProcessError, OSError) as e:
+                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8', timeout=30*60)
+  except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
     output = getattr(e, "output", "") or ""
-    drop_venv(f"venv sync failed: {e} {output[-2000:]}")
+    drop_venv(f"venv sync failed: {e} {str(output)[-2000:]}")
+    return
+
+  # uv may recreate the env if it disagrees with the request; make sure what we ship
+  # is still relocatable and doesn't point back into the staging dir
+  try:
+    with open(os.path.join(venv_dir, "pyvenv.cfg")) as f:
+      relocatable = "relocatable = true" in f.read()
+    with open(os.path.join(venv_dir, "bin", "activate")) as f:
+      stale = "safe_staging" in f.read()
+  except OSError:
+    relocatable, stale = False, True
+  if not relocatable or stale:
+    drop_venv("synced venv is not relocatable")
 
 
 def finalize_update() -> None:
@@ -425,9 +441,9 @@ class Updater:
       ["git", "checkout", "--force", "--no-recurse-submodules", "-B", branch, "FETCH_HEAD"],
       ["git", "branch", "--set-upstream-to", f"origin/{branch}"],
       ["git", "reset", "--hard"],
-      # -e .venv/: the venv (created by uv sync) is gitignored, so a plain -xdff would
-      # wipe it from the update candidate; sync_venv() then trues it up.
-      ["git", "clean", "-xdff", "-e", ".venv/"],
+      # .venv is not kept: sync_venv() rebuilds it for the candidate anyway, and keeping
+      # the old one would only copy 1-2 GB into the staging dir to be deleted
+      ["git", "clean", "-xdff"],
       ["git", "submodule", "sync"],
       ["git", "submodule", "update", "--init", "--recursive"],
       ["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"],
