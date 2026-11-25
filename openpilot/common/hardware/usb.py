@@ -131,11 +131,6 @@ def get_chestnut_hardware_state(devices: list[dict], state, compiled: bool,
   return ChestnutHardwareInfo(hw_state, True, True, pcie_link_up, powered, slow_usb, pcie_label)
 
 
-def is_chestnut_usb_id(vendor_id: int, product_id: int, include_bootloader: bool = False) -> bool:
-  ids = CHESTNUT_USB_IDS + CHESTNUT_ROM_USB_IDS if include_bootloader else CHESTNUT_USB_IDS
-  return (vendor_id, product_id) in ids
-
-
 def get_usb_topology() -> set[str]:
   try:
     return set(os.listdir(USB_DEVICES_PATH))

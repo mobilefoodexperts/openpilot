@@ -835,7 +835,7 @@ function op_use_fork() {
         "$py" -c "from Crypto.Hash import SHA512" 2>/dev/null && break
         py=""
       done
-      PYTHONPATH=$(pwd) "${py:-python3}" system/hardware/tici/agnos.py system/hardware/tici/agnos.json --swap || true
+      PYTHONPATH=$(pwd) "${py:-python3}" openpilot/common/hardware/comma/agnos.py openpilot/system/hardware/comma/agnos.json --swap || true
     fi
   fi
   echo ""

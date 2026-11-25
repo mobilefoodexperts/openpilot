@@ -905,7 +905,8 @@ class HandlerMixin:
       data = bytes.fromhex(data_hex)
     except ValueError:
       raise web.HTTPBadRequest(text="Invalid hex data") from None
-    self._can_handler.send_raw(int(address), data, int(bus))
+    if not self._can_handler.send_raw(int(address), data, int(bus)):
+      raise web.HTTPConflict(text="CAN send is only allowed while the car is off")
     return web.json_response({"address": int(address), "data": data.hex(), "bus": int(bus)})
 
   async def handle_error_log(self, request):
