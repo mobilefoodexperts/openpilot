@@ -60,8 +60,26 @@ The fork doesn't change any sunnylink code, params or processes, and nothing che
 4. **Back up settings** right away (restore works only on the same device).
 5. **Changing the model from the app:** sunnylink can write the model-download request (`ModelManager_DownloadRef`, not on the blocked list in `sunnypilot/sunnylink/athena/sunnylinkd.py`), and sunnypilot advertises the model selector in the sunnylink dashboard. The device downloads and switches only while the car is off. The on-device Settings → Models page always works.
 
+## Testing on a Linux PC (external Ubuntu SSD)
+
+Use **Ubuntu 24.04 LTS Desktop** (sunnypilot's CI runs on `ubuntu-24.04`; Python 3.12). Give it 40 GB+ and install the NVIDIA drivers for the simulator.
+
+```bash
+git clone --recurse-submodules -b sunnypilot-nov-2026 https://github.com/mobilefoodexperts/openpilot.git
+cd openpilot
+tools/op.sh setup          # installs uv, Python deps, system packages
+source .venv/bin/activate
+scons -j$(nproc)           # build for PC
+```
+
+- **comma 4 UI on the PC** (check screen/icon changes without the car): see `openpilot/selfdrive/ui/tests/` and the UI report the GitHub test run uploads (`ui-report-*` artifact).
+- **Replay a recorded drive** (needs drives from the comma): `openpilot/tools/replay/`.
+- **Driving simulator** (MetaDrive): `openpilot/tools/sim/README.md`.
+- **Tests:** `pytest openpilot/selfdrive/car/tests/test_car_interfaces.py -k TESLA` and, in `opendbc_repo`, `pytest opendbc/car/tesla/tests`.
+
 ## Known limits
 
+- `updated.py` `sync_venv()` builds a **relocatable** `.venv` in the staging dir (a default uv venv hard-codes its path and breaks when the update is moved into place) and never fails an update: if uv is missing or the sync fails it removes `.venv`, and `launch_chffrplus.sh` uses AGNOS's `/usr/local/venv` like upstream. On a fresh install there is no `.venv`, so PitStop (needs `aiohttp`) may not start until the first update.
 - PitStop only sends CAN messages while the car is off (`selfdrive/controls/lib/can_api/handler.py`), so it can never compete with `card` for `sendcan` while driving.
 - The fork's static model `.pkl` self-heal and `chestnut_link.py` were removed in Nov 2026: sunnypilot removed model chunking (#38941), and they would have made every update fail.
 - PitStop's Chestnut flash/overheat and model-provisioning cards show empty, because nothing writes those params any more.

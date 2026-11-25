@@ -173,20 +173,41 @@ def init_overlay() -> None:
 
 
 def sync_venv(target_dir: str) -> None:
-  """Ensure target_dir's own .venv matches its own uv.lock/pyproject.toml, so the
-  candidate that gets swapped in at BASEDIR is runnable with zero network access at
-  car-start time. Must be called against the update candidate's own path, never
-  BASEDIR - this provisions the NEW checkout, not the one currently running."""
-  if shutil.which("uv") is None:
-    raise RuntimeError("uv not found on PATH; cannot provision venv for update candidate")
-  cloudlog.info(f"syncing venv for update candidate at {target_dir}")
-  # --all-extras, matching tools/setup_dependencies.sh: a bare `uv sync` (just the
-  # "standalone" default group) covers the driving stack's own imports, but
-  # launch_chffrplus.sh's build.py/SConstruct step - which runs on every boot when
-  # `prebuilt` is absent - needs the "tools" extra too (comma-deps-ncurses, imgui,
-  # ...) to build at all. Confirmed on-device: a narrower sync here left the device
-  # stuck on a "failed to build" screen with ModuleNotFoundError: ncurses.
-  run(["uv", "sync", "--frozen", "--all-extras"], target_dir)
+  """Provision target_dir's own .venv from its uv.lock (adds the fork's extra deps, e.g.
+  PitStop's aiohttp). Never blocks an update: if anything goes wrong the .venv is removed,
+  and launch_chffrplus.sh falls back to AGNOS's /usr/local/venv - the same environment
+  upstream sunnypilot always uses.
+
+  The venv is created --relocatable because it's built here in the staging dir and then
+  moved to BASEDIR; a default uv venv hard-codes its own path in bin/activate and in
+  script shebangs, which would point at a directory that no longer exists after the swap."""
+  venv_dir = os.path.join(target_dir, ".venv")
+
+  def drop_venv(reason: str) -> None:
+    cloudlog.warning(f"sync_venv: {reason}; using AGNOS /usr/local/venv instead")
+    shutil.rmtree(venv_dir, ignore_errors=True)
+
+  uv = shutil.which("uv")
+  if uv is None:
+    drop_venv("uv not found on PATH")
+    return
+
+  base_python = "/usr/local/venv/bin/python3" if os.path.exists("/usr/local/venv/bin/python3") else (shutil.which("python3") or "python3")
+  env = {**os.environ, "UV_PYTHON": base_python, "UV_PYTHON_DOWNLOADS": "never", "UV_PROJECT_ENVIRONMENT": venv_dir}
+  env.pop("VIRTUAL_ENV", None)
+  try:
+    cloudlog.info(f"syncing venv for update candidate at {target_dir}")
+    # recreate from scratch: a copied-over venv may be non-relocatable or point elsewhere
+    shutil.rmtree(venv_dir, ignore_errors=True)
+    subprocess.check_output([uv, "venv", "--relocatable", "--python", base_python, venv_dir],
+                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8')
+    # --all-extras, matching tools/setup_dependencies.sh: the build step needs the
+    # "tools" extra too (comma-deps-ncurses, imgui, ...)
+    subprocess.check_output([uv, "sync", "--frozen", "--all-extras"],
+                            cwd=target_dir, env=env, stderr=subprocess.STDOUT, encoding='utf8')
+  except (subprocess.CalledProcessError, OSError) as e:
+    output = getattr(e, "output", "") or ""
+    drop_venv(f"venv sync failed: {e} {output[-2000:]}")
 
 
 def finalize_update() -> None:
@@ -207,8 +228,8 @@ def finalize_update() -> None:
 
   # Self-heal .venv against THIS candidate's own lockfile. Deliberately done here
   # (background staging, device still drivable on the old BASEDIR) rather than at
-  # boot time, where a missing network would leave the car unable to start. No
-  # try/except: a broken update must never be marked ready to swap in.
+  # boot time, where a missing network would leave the car unable to start. It never
+  # fails the update: on any problem it removes .venv so the AGNOS venv is used.
   # (The fork's static model .pkl self-heal was dropped: sunnypilot removed model
   # chunking in #38941 and rebuilds the default model files at build time.)
   sync_venv(FINALIZED)
