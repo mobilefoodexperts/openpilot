@@ -38,6 +38,18 @@ The fork's history isn't linked to sunnypilot's by real merges, so a plain `git 
 4. Commit the merged tree onto the fork's previous branch head (single parent) and push.
 5. Check: model URLs in `sunnypilot/models/fetcher.py` and `REQUIRED_JSON_VERSION` in `sunnypilot/models/helpers.py` match sunnypilot's; `uv lock --check`; no conflict markers; every `openpilot.*` import in fork code resolves; Tesla tests in opendbc (`pytest opendbc/car/tesla/tests`, Python 3.12).
 
+## Prebuilt branch (faster install)
+
+A `-prebuilt` branch has everything already compiled, so the comma skips the long build on install. The driving models are compiled for the comma's own GPU, so a prebuilt can only be made **on a comma** (sunnypilot does the same with its own devices; the original fork's GitHub-runner workflow relied on model files copied from a device and broke whenever tinygrad changed, so it was not carried over).
+
+1. Install the source branch on the comma and confirm it builds and drives.
+2. Enable SSH on the comma (Settings → Developer → SSH keys: a GitHub username whose keys include the PC's key).
+3. Over SSH, stop openpilot, then run the steps at the top of `tools/release/build_fork_prebuilt.sh` with `PREBUILT_BRANCH=<branch>-prebuilt`.
+4. From the PC: `git fetch ssh://comma@<ip>/data/src_openpilot <branch>-prebuilt:<branch>-prebuilt`, then `GIT_LFS_SKIP_PUSH=1 git push origin <branch>-prebuilt` (the prebuilt has no LFS: binaries are committed as plain files).
+5. Reinstall the comma from `mobilefoodexperts/<branch>-prebuilt` (also the URL to give anyone else).
+
+Rebuild the prebuilt after every change to the source branch.
+
 ## sunnylink
 
 The fork doesn't change any sunnylink code, params or processes, and nothing checks the repo or branch, so sunnylink works the same as on sunnypilot: the device is identified by its keys and dongle ID. After install:
@@ -46,6 +58,7 @@ The fork doesn't change any sunnylink code, params or processes, and nothing che
 2. **Settings → sunnylink:** enable sunnylink, accept the consent screen, wait for a sunnylink dongle ID.
 3. **Pair** (QR code) to link a GitHub account; sponsoring is optional. Basic backup/restore doesn't need a sponsor tier.
 4. **Back up settings** right away (restore works only on the same device).
+5. **Changing the model from the app:** sunnylink can write the model-download request (`ModelManager_DownloadRef`, not on the blocked list in `sunnypilot/sunnylink/athena/sunnylinkd.py`), and sunnypilot advertises the model selector in the sunnylink dashboard. The device downloads and switches only while the car is off. The on-device Settings → Models page always works.
 
 ## Known limits
 
