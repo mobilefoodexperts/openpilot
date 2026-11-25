@@ -22,13 +22,13 @@ Generate an SSH key (`ssh-keygen -t ed25519`), add it to GitHub, then on the dev
 SSH into the device (`ssh comma@<device-ip>`) and run:
 ```bash
 cd /data && rm -rf openpilot
-git clone --depth 1 --shallow-submodules --recurse-submodules -b sunnypilot-nov-2026 https://github.com/mobilefoodexperts/SunnyPilot-TeslaHW1.git openpilot
+git clone --depth 1 --shallow-submodules --recurse-submodules -b sunnypilot-nov-2026 https://github.com/mobilefoodexperts/openpilot.git openpilot
 cd openpilot
 op setup
 op build -j2 2>&1 | tee /data/build.log
 sudo reboot
 ```
-If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/mobilefoodexperts_SunnyPilot-TeslaHW1/tools/op.sh fork list`.
+If AGNOS versions differ, `op fork <N>` updates the OS automatically before reboot. No `fork` after swap? Run `/data/forks/mobilefoodexperts_openpilot/tools/op.sh fork list`.
 
 
 ## Upstream Updates
