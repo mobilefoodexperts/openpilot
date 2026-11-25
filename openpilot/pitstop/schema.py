@@ -290,7 +290,8 @@ def generate_openapi_schema(host: str = "localhost", port: int = 80, dbc=None) -
           "tags": ["models"],
           "summary": "Get the active model bundle",
           "responses": {"200": {"description": "Active bundle, plus activeSource ('chestnut'/'qcom', from deviceState.chestnutPresent) " +
-                                                "and chestnutHardwareState/-Label/-Available when relevant"}},
+                                                "and chestnutHardwareState/-Label/-Available when relevant, plus staticProvisioning " +
+                                                "(outcome of the post-update static model check, if any)"}},
         }
       },
       "/api/models/{name}": {

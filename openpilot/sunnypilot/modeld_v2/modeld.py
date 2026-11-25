@@ -19,6 +19,7 @@ from setproctitle import setproctitle
 
 import openpilot.cereal.messaging as messaging
 from openpilot.common.hardware import COMMA_HARDWARE
+from openpilot.selfdrive.modeld.chestnut_link import wait_for_stable_chestnut
 from openpilot.selfdrive.modeld.helpers import chestnut_present, wait_for_chestnut
 from openpilot.cereal import log
 from opendbc.car.structs import car
@@ -308,6 +309,9 @@ def main(demo=False):
       nonlocal big_model
       try:
         wait_for_chestnut()
+        # chestnut_link (kept from the HW1 fork): GPU powered and PCIe link up before tinygrad opens it
+        if not wait_for_stable_chestnut():
+          raise RuntimeError("chestnut not powered or PCIe link not up")
         m = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=True)
         m.warmup()
         big_model = m
