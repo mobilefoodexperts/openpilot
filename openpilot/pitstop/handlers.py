@@ -13,6 +13,7 @@ from openpilot.common.hardware.usb import (CHESTNUT_SLOW_USB_MBPS, CHESTNUT_USAB
                                             get_chestnut_hardware_state, get_usb_state, is_chestnut_usb_id)
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 from openpilot.common.version import get_build_metadata
+from openpilot.common.hardware.hw import Paths
 from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.system.hardware.chestnut.status import GPU_TEMP_LIMIT, MEMORY_TEMP_LIMIT, TEMP_HYSTERESIS
 from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities
